@@ -352,32 +352,29 @@ impl TranscriberSrcPad {
             let send_eos =
                 state.send_eos && state.output_items.is_empty() && state.accumulator.is_none();
 
-            while let Some(item) = state.output_items.pop_front() {
-                match item {
-                    TranscriberOutput::Buffer(mut buf) => {
-                        let buf_mut = buf.make_mut();
-                        let mut pts = buf_mut.pts().unwrap() + start_time;
-                        let mut duration = buf_mut.duration().unwrap();
-                        if let Some(position) = state.out_segment.position() {
-                            if pts < position {
-                                gst::debug!(
-                                    CAT,
-                                    imp = self,
-                                    "Adjusting item timing({:?} < {:?})",
-                                    pts,
-                                    position,
-                                );
-                                duration = duration.saturating_sub(position - pts);
-                                pts = position;
-                            }
+            while let Some(mut buf) = state.buffers.pop_front() {
+                {
+                    let buf_mut = buf.make_mut();
+                    let mut pts = buf_mut.pts().unwrap() + start_time;
+                    let mut duration = buf_mut.duration().unwrap();
+                    if let Some(position) = state.out_segment.position() {
+                        if pts < position {
+                            gst::debug!(
+                                CAT,
+                                imp = self,
+                                "Adjusting item timing({:?} < {:?})",
+                                pts,
+                                position,
+                            );
+                            duration = duration.saturating_sub(position - pts);
+                            pts = position;
                         }
-
-                        buf_mut.set_pts(pts);
-                        buf_mut.set_duration(duration);
-                        items.push(TranscriberOutput::Buffer(buf));
                     }
-                    _ => items.push(item),
+
+                    buf_mut.set_pts(pts);
+                    buf_mut.set_duration(duration);
                 }
+                items.push(buf);
             }
 
             (
