@@ -186,6 +186,7 @@ static RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
 });
 
 const DEFAULT_LATENCY_MS: u32 = 8000;
+const DEFAULT_MAX_DELAY_MS: u32 = 0;
 const DEFAULT_LATENESS_MS: u32 = 0;
 const DEFAULT_JOIN_PUNCTUATION: bool = true;
 const DEFAULT_ENABLE_LATE_PUNCTUATION_HACK: bool = true;
@@ -197,6 +198,7 @@ const GRANULARITY_MS: u32 = 100;
 #[derive(Debug, Clone)]
 struct Settings {
     latency_ms: u32,
+    max_delay_ms: u32,
     lateness_ms: u32,
     language_code: Option<String>,
     url: Option<String>,
@@ -211,6 +213,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             latency_ms: DEFAULT_LATENCY_MS,
+            max_delay_ms: DEFAULT_MAX_DELAY_MS,
             lateness_ms: DEFAULT_LATENESS_MS,
             language_code: Some("en".to_string()),
             url: Some("ws://0.0.0.0:9000".to_string()),
@@ -1332,10 +1335,14 @@ impl Transcriber {
             state.srcpads.len()
         );
 
-        // Workaround for speechmatics sometimes outputting
-        // final punctuation in the next transcript
-        let max_delay = ((settings.latency_ms + settings.lateness_ms) as f32)
-            / (1_000. * late_punctuation_factor as f32);
+        let max_delay = if settings.max_delay_ms == 0 {
+            // Workaround for speechmatics sometimes outputting
+            // final punctuation in the next transcript
+            ((settings.latency_ms + settings.lateness_ms) as f32)
+                / (1_000. * late_punctuation_factor as f32)
+        } else {
+            settings.max_delay_ms as f32 / 1000.
+        };
 
         let start_message = StartRecognition {
             message: "StartRecognition".to_string(),
@@ -1634,6 +1641,11 @@ impl ObjectImpl for Transcriber {
                     .blurb("Amount of milliseconds to allow for transcription")
                     .default_value(DEFAULT_LATENCY_MS)
                     .build(),
+                glib::ParamSpecUInt::builder("max-delay")
+                    .nick("Max Delay")
+                    .blurb("Max delay to pass to the speechmatics API (0 = use latency)")
+                    .default_value(DEFAULT_LATENCY_MS)
+                    .build(),
                 glib::ParamSpecUInt::builder("lateness")
                     .nick("Lateness")
                     .blurb("Amount of milliseconds to introduce as lateness")
@@ -1752,6 +1764,10 @@ impl ObjectImpl for Transcriber {
                         .post_message(gst::message::Latency::builder().src(&*self.obj()).build());
                 }
             }
+            "max-delay" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.max_delay_ms = value.get().expect("type checked upstream");
+            }
             "lateness" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.lateness_ms = value.get().expect("type checked upstream");
@@ -1831,6 +1847,10 @@ impl ObjectImpl for Transcriber {
             "latency" => {
                 let settings = self.settings.lock().unwrap();
                 settings.latency_ms.to_value()
+            }
+            "max-delay" => {
+                let settings = self.settings.lock().unwrap();
+                settings.max_delay_ms.to_value()
             }
             "lateness" => {
                 let settings = self.settings.lock().unwrap();
