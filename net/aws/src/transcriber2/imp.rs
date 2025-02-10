@@ -41,6 +41,7 @@ const DEFAULT_INPUT_LANG_CODE: &str = "en-US";
 const DEFAULT_STABILITY: AwsTranscriberResultStability = AwsTranscriberResultStability::Low;
 const DEFAULT_VOCABULARY_FILTER_METHOD: AwsTranscriberVocabularyFilterMethod =
     AwsTranscriberVocabularyFilterMethod::Mask;
+const DEFAULT_DIARIZATION: bool = false;
 
 #[derive(Debug, Clone)]
 pub(super) struct Settings {
@@ -55,6 +56,7 @@ pub(super) struct Settings {
     results_stability: AwsTranscriberResultStability,
     vocabulary_filter: Option<String>,
     vocabulary_filter_method: AwsTranscriberVocabularyFilterMethod,
+    diarization: bool,
 }
 
 impl Default for Settings {
@@ -71,6 +73,7 @@ impl Default for Settings {
             results_stability: DEFAULT_STABILITY,
             vocabulary_filter: None,
             vocabulary_filter_method: DEFAULT_VOCABULARY_FILTER_METHOD,
+            diarization: DEFAULT_DIARIZATION,
         }
     }
 }
@@ -652,7 +655,8 @@ impl Transcriber {
                 .enable_partial_results_stabilization(true)
                 .partial_results_stability(settings.results_stability.into())
                 .set_vocabulary_name(settings.vocabulary)
-                .set_session_id(settings.session_id);
+                .set_session_id(settings.session_id)
+                .set_show_speaker_label(Some(settings.diarization));
 
             if let Some(vocabulary_filter) = settings.vocabulary_filter {
                 builder = builder
@@ -943,6 +947,12 @@ impl ObjectImpl for Transcriber {
                     .blurb("Defines how filtered words will be edited, has no effect when vocabulary-filter-name isn't set")
                     .mutable_ready()
                     .build(),
+                glib::ParamSpecBoolean::builder("diarization")
+                    .nick("Diarization")
+                    .blurb("Defines whether to separate speakers in the audio")
+                    .default_value(DEFAULT_DIARIZATION)
+                    .mutable_ready()
+                    .build(),
             ]
         });
 
@@ -1013,6 +1023,10 @@ impl ObjectImpl for Transcriber {
                     .get::<AwsTranscriberVocabularyFilterMethod>()
                     .expect("type checked upstream");
             }
+            "diarization" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.diarization = value.get().expect("type checked upstream");
+            }
             _ => unimplemented!(),
         }
     }
@@ -1062,6 +1076,10 @@ impl ObjectImpl for Transcriber {
             "vocabulary-filter-method" => {
                 let settings = self.settings.lock().unwrap();
                 settings.vocabulary_filter_method.to_value()
+            }
+            "diarization" => {
+                let settings = self.settings.lock().unwrap();
+                settings.diarization.to_value()
             }
             _ => unimplemented!(),
         }
