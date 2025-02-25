@@ -1536,6 +1536,11 @@ impl Transcriber {
 
         *state = State::default();
 
+
+        let srcpad = self.obj().static_pad("src").expect("always has transcript source pad");
+
+        state.srcpads.insert(srcpad.downcast().unwrap());
+
         gst::info!(
             CAT,
             imp = self,
